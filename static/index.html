@@ -258,33 +258,33 @@
             </button>
           </div>
 
-          <!-- Compression Level Selector (iLovePDF style) -->
+          <!-- Compression Level Selector (3 Options) -->
           <div class="level-selector-block">
             <div class="level-header">
-              <span>Pilih Tingkat Kompresi</span>
-              <small>Sesuaikan keseimbangan antara ukuran file &amp; detail visual</small>
+              <span>Pilih Opsi Prioritas Kompresi</span>
+              <small>Ketiga opsi tetap akan disiapkan agar bisa kamu bandingkan di hasil akhir</small>
             </div>
 
             <div class="level-grid" role="radiogroup" aria-label="Tingkat Kompresi">
-              <label class="level-option" data-level-card="extreme">
-                <input type="radio" name="compression_level" value="extreme" />
+              <label class="level-option" data-level-card="minim">
+                <input type="radio" name="compression_level" value="minim" />
                 <div class="level-option-inner">
                   <div class="level-top">
-                    <span class="level-title">Kompresi Ekstrem</span>
-                    <span class="level-chip chip-saver">Hemat Maksimal</span>
+                    <span class="level-title">Ukuran Paling Minim</span>
+                    <span class="level-chip chip-saver">Paling Kecil</span>
                   </div>
-                  <p>Ukuran file paling kecil, cocok untuk kirim cepat via email atau portal upload.</p>
+                  <p>Kompresi maksimal ke ukuran terkecil yang memungkinkan tanpa merusak isi &amp; keterbacaan file.</p>
                 </div>
               </label>
 
-              <label class="level-option selected" data-level-card="recommended">
-                <input type="radio" name="compression_level" value="recommended" checked />
+              <label class="level-option selected" data-level-card="balanced">
+                <input type="radio" name="compression_level" value="balanced" checked />
                 <div class="level-option-inner">
                   <div class="level-top">
-                    <span class="level-title">Rekomendasi</span>
-                    <span class="level-chip chip-best">Paling Seimbang</span>
+                    <span class="level-title">Balanced (Seimbang)</span>
+                    <span class="level-chip chip-best">Rekomendasi</span>
                   </div>
-                  <p>Kualitas visual tetap jernih dan tajam dengan pemangkasan ukuran optimal.</p>
+                  <p>Keseimbangan ideal: ukuran file jauh lebih hemat dengan ketajaman visual yang tetap terjaga.</p>
                 </div>
               </label>
 
@@ -292,10 +292,10 @@
                 <input type="radio" name="compression_level" value="light" />
                 <div class="level-option-inner">
                   <div class="level-top">
-                    <span class="level-title">Kualitas Tinggi</span>
-                    <span class="level-chip chip-hq">Detail Terjaga</span>
+                    <span class="level-title">Kompres Sedikit</span>
+                    <span class="level-chip chip-hq">Mendekati Utama</span>
                   </div>
-                  <p>Kompresi ringan untuk mempertahankan resolusi tinggi &amp; ketajaman penuh.</p>
+                  <p>Hanya memangkas sedikit beban berlebih agar ukuran mendekati file utama dengan kualitas penuh.</p>
                 </div>
               </label>
             </div>
@@ -421,11 +421,22 @@
           <!-- Visual Bar Comparison -->
           <div class="visual-ratio-bar">
             <div class="ratio-bar-header">
-              <span>Perbandingan Ruang Penyimpanan</span>
+              <span>Perbandingan Ruang Penyimpanan (<em id="result-active-tier-name">Balanced</em>)</span>
               <strong id="result-saved-bytes-text">Hemat 1.54 MB</strong>
             </div>
             <div class="ratio-track">
               <div class="ratio-fill" id="result-ratio-fill" style="width: 45%;"></div>
+            </div>
+          </div>
+
+          <!-- 3 Interactive Result Options Selector -->
+          <div class="result-tiers-section">
+            <div class="result-tiers-head">
+              <span>Pilih Opsi Hasil Kompresi</span>
+              <small>Klik salah satu opsi di bawah untuk melihat perbandingan Before-After &amp; mengunduhnya</small>
+            </div>
+            <div class="result-tiers-grid" id="result-tiers-grid">
+              <!-- Populated dynamically with the 3 real compressed variants: minim, balanced, light -->
             </div>
           </div>
 

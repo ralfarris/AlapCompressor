@@ -47,8 +47,9 @@ const TOOL_CONFIG = {
 const state = {
   activeTool: "pdf",
   selectedFile: null,
-  compressionLevel: "recommended",
+  compressionLevel: "balanced",
   currentJobId: null,
+  lastCompletedJob: null,
   pollTimer: null,
   displayedProgress: 0,
   history: [],
@@ -100,8 +101,10 @@ const resultElapsed = document.getElementById("result-elapsed");
 const resultOrigSize = document.getElementById("result-orig-size");
 const resultNewSize = document.getElementById("result-new-size");
 const resultSavingsPill = document.getElementById("result-savings-pill");
+const resultActiveTierName = document.getElementById("result-active-tier-name");
 const resultSavedBytesText = document.getElementById("result-saved-bytes-text");
 const resultRatioFill = document.getElementById("result-ratio-fill");
+const resultTiersGrid = document.getElementById("result-tiers-grid");
 const downloadResultBtn = document.getElementById("download-result-btn");
 const compressAnotherBtn = document.getElementById("compress-another-btn");
 
@@ -381,44 +384,117 @@ function pollJobStatus(jobId, animStartTime) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Result Display & Session History
+// 5. Result Display (3 Options + Before-After Board) & Session History
 // ---------------------------------------------------------------------------
-function showCompressionResult(job) {
-  viewCompressing.classList.add("hidden");
-  viewSetup.classList.add("hidden");
-  viewResult.classList.remove("hidden");
+function selectResultTier(job, tierKey) {
+  const variants = job.variants || {};
+  const chosen = variants[tierKey] || {
+    tier: tierKey,
+    title: tierKey,
+    compressed_size: job.compressed_size,
+    saved_bytes: job.saved_bytes,
+    saved_percent: job.saved_percent,
+    download_name: job.download_name,
+  };
 
-  resultFilename.textContent = job.download_name;
-  resultElapsed.textContent = `${job.elapsed_seconds || 0.8} detik`;
+  resultFilename.textContent = chosen.download_name;
   resultOrigSize.textContent = formatBytes(job.original_size);
-  resultNewSize.textContent = formatBytes(job.compressed_size);
+  resultNewSize.textContent = formatBytes(chosen.compressed_size);
 
-  const savedPct = job.saved_percent || 0;
+  const savedPct = chosen.saved_percent || 0;
   resultSavingsPill.textContent = savedPct > 0 ? `-${savedPct}%` : "Optimal";
+  if (resultActiveTierName) {
+    resultActiveTierName.textContent = chosen.title || tierKey;
+  }
   resultSavedBytesText.textContent =
-    job.saved_bytes > 0
-      ? `Hemat ${formatBytes(job.saved_bytes)} (${savedPct}% lebih ringan)`
+    chosen.saved_bytes > 0
+      ? `Hemat ${formatBytes(chosen.saved_bytes)} (${savedPct}% lebih ringan)`
       : "File sudah berada pada ukuran paling optimal";
 
   const newRatioWidth =
     job.original_size > 0
-      ? Math.max(8, Math.min(100, Math.round((job.compressed_size / job.original_size) * 100)))
+      ? Math.max(8, Math.min(100, Math.round((chosen.compressed_size / job.original_size) * 100)))
       : 50;
   resultRatioFill.style.width = `${newRatioWidth}%`;
 
-  const dlUrl = `/api/download/${job.job_id}`;
+  const dlUrl = `/api/download/${job.job_id}/${tierKey}`;
   downloadResultBtn.href = dlUrl;
-  downloadResultBtn.setAttribute("download", job.download_name);
+  downloadResultBtn.setAttribute("download", chosen.download_name);
 
+  // Highlight selected tier card
+  if (resultTiersGrid) {
+    resultTiersGrid.querySelectorAll("[data-result-tier]").forEach((card) => {
+      const isSelected = card.getAttribute("data-result-tier") === tierKey;
+      card.classList.toggle("active", isSelected);
+      const stateLabel = card.querySelector(".rt-select-state");
+      if (stateLabel) {
+        stateLabel.textContent = isSelected ? "✓ Opsi Terpilih" : "Klik untuk Pilih";
+      }
+    });
+  }
+}
+
+function showCompressionResult(job) {
+  state.lastCompletedJob = job;
+  viewCompressing.classList.add("hidden");
+  viewSetup.classList.add("hidden");
+  viewResult.classList.remove("hidden");
+
+  resultElapsed.textContent = `${job.elapsed_seconds || 0.8} detik`;
+
+  const variants = job.variants || {};
+  const tierOrder = ["minim", "balanced", "light"];
+  const initialTier = job.selected_tier && variants[job.selected_tier] ? job.selected_tier : "balanced";
+
+  if (resultTiersGrid) {
+    resultTiersGrid.innerHTML = tierOrder
+      .filter((t) => variants[t])
+      .map((t) => {
+        const v = variants[t];
+        const dlUrl = `/api/download/${job.job_id}/${t}`;
+        return `
+          <div class="result-tier-card" data-result-tier="${t}">
+            <div>
+              <div class="rt-top">
+                <span class="rt-title">${v.title}</span>
+                <span class="rt-badge rt-badge-${t}">${v.badge}</span>
+              </div>
+              <div class="rt-size-row">
+                <strong class="rt-size">${formatBytes(v.compressed_size)}</strong>
+                <span class="rt-saved">-${v.saved_percent}%</span>
+              </div>
+              <p class="rt-desc">${v.desc}</p>
+            </div>
+            <div class="rt-footer">
+              <span class="rt-select-state">Klik untuk Pilih</span>
+              <a href="${dlUrl}" class="rt-quick-dl" download="${v.download_name}" title="Unduh opsi ${v.title}">Unduh</a>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    resultTiersGrid.querySelectorAll("[data-result-tier]").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".rt-quick-dl")) return;
+        const t = card.getAttribute("data-result-tier");
+        selectResultTier(job, t);
+      });
+    });
+  }
+
+  selectResultTier(job, initialTier);
+
+  const chosen = variants[initialTier] || job;
   // Add to session history
   state.history.unshift({
     jobId: job.job_id,
-    name: job.download_name,
+    name: chosen.download_name,
     tool: job.file_type,
     origSize: job.original_size,
-    newSize: job.compressed_size,
-    savedPct: savedPct,
-    dlUrl: dlUrl,
+    newSize: chosen.compressed_size,
+    savedPct: chosen.saved_percent || 0,
+    dlUrl: `/api/download/${job.job_id}/${initialTier}`,
   });
   renderHistory();
 }
