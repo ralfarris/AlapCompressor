@@ -1,28 +1,68 @@
 # AlapCompressor
 
-**AlapCompressor** adalah aplikasi web kompresi file multi-format (*all-in-one*) bergaya *soft pastel editorial* yang terinspirasi dari kemudahan **iLovePDF**, dirancang dengan palet warna hangat yang ramah di mata.
+Aplikasi kompresi file **PDF, MP4, dan Word (`.docx`)** super ringan (~138 KB single-file `.exe` dengan antarmuka studio *soft pastel editorial*, tanpa perlu install Python untuk pengguna langsung). Terinspirasi dari kemudahan **iLovePDF**, dirancang dengan palet warna hangat yang ramah di mata serta menyajikan **3 opsi hasil kompresi sekaligus** lengkap dengan perbandingan *Before vs After*.
 
-## Fitur Utama
+[![Download Latest Release](https://img.shields.io/github/v/release/ralfarris/AlapCompressor?label=Download%20AlapCompressor&style=for-the-badge&color=2A9D8F&cacheSeconds=60)](https://github.com/ralfarris/AlapCompressor/releases/latest)
 
-1. **Tiga Mesin Kompresi Nyata (100% Lokal & Privat)**:
-   - **Compress PDF (`.pdf`)**: Mengoptimalkan gambar tertanam di setiap halaman, memadatkan *content streams* (DEFLATE level 9), serta menghapus objek duplikat menggunakan `pypdf` & `Pillow`.
-   - **Compress MP4 (`.mp4`)**: Mengompresi stream video & audio menggunakan `FFmpeg` (`libx264` + `aac`) dengan pelacakan progres *real-time*.
-   - **Compress Word (`.docx`)**: Merampingkan ukuran dokumen Microsoft Word dengan mengoptimalkan media gambar di dalam `word/media/`, merapikan struktur XML, dan mengemas ulang arsip dengan kompresi maksimal.
-2. **3 Opsi Hasil Kompresi Sekaligus (Bisa Dipilih & Dibandingkan *Before-After*)**:
-   - **Ukuran Paling Minim (`minim`)**: Kompresi maksimal ke ukuran terkecil yang memungkinkan tanpa merusak isi & keterbacaan file.
-   - **Balanced (`balanced`)**: Keseimbangan ideal antara penghematan ruang penyimpanan & ketajaman kualitas visual.
-   - **Kompres Sedikit (`light`)**: Hanya memangkas beban berlebih agar ukuran mendekati ukuran utama dengan kualitas penuh.
-   - Ketiga opsi diracik sekaligus untuk semua format (**PDF**, **MP4**, **Word**) sehingga pada halaman hasil kompresi pengguna dapat langsung membandingkan *Before vs After* tiap opsi dan mengunduh salah satu maupun ketiganya.
-3. **Animasi Loading Screen & Animasi Proses Kompresi Estetik**:
-   - **Splash Loading Screen**: Animasi tumpukan format file (*MP4, PDF, DOCX*) dengan efek *layered press* dan transisi halus saat aplikasi dibuka.
-   - **Compression Theater**: Animasi *orbital ring*, partikel konvergen, *hydraulic squeeze core*, *circular SVG progress gauge*, dan *pipeline tracker* 3 tahap selama file sedang dikompresi.
-4. **File Contoh Instan (1-Klik Test)**:
-   - Tersedia tombol **Coba File Contoh** pada masing-masing mode (PDF, MP4, Word) untuk langsung mencoba kompresi tanpa harus menyiapkan file terlebih dahulu.
+## Cara Menggunakan (Untuk Pengguna Langsung)
+1. Buka halaman [**GitHub Releases**](https://github.com/ralfarris/AlapCompressor/releases/latest) (atau klik tombol hijau di atas).
+2. Download file **`AlapCompressor.exe`** (atau `AlapCompressor-Windows.zip`).
+3. Langsung jalankan **`AlapCompressor.exe`** (tanpa perlu install apa pun — antarmuka aplikasi akan otomatis terbuka).
+4. Pilih tab **Compress PDF**, **Compress MP4**, atau **Compress Word**, tarik & lepaskan file (atau klik **Coba File Contoh**), lalu klik **Kompres Sekarang**.
 
-## Cara Menjalankan
+---
 
+## Menjalankan & Build dari Source Code (Developer)
+
+### 1. Menjalankan / Build Versi Executable (`AlapCompressor.exe`)
+Dikompilasi langsung menggunakan compiler C# bawaan Windows (`.NET Framework 4.x`) tanpa perlu SDK tambahan:
+```powershell
+.\build.bat
+```
+atau:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+```
+Hasil executable siap pakai akan dibuat di **`dist\AlapCompressor.exe`**. Kamu juga bisa menjalankannya melalui:
+```bash
+python run.py
+```
+
+### 2. Menjalankan Mode Server Python (`app.py`)
 ```bash
 python app.py
 ```
+Lalu buka **`http://127.0.0.1:8080`** di browser.
 
-Kemudian buka **`http://127.0.0.1:8080`** di browser.
+---
+
+## Fitur Utama
+
+- **Single-File Portable (`AlapCompressor.exe`)** – cukup 1 file `.exe` (~138 KB) yang sudah memuat seluruh aset antarmuka di dalamnya dan berjalan dengan ikon di *System Tray*.
+- **Tiga Jenis File Utama**:
+  - **Compress PDF (`.pdf`)** – mengoptimalkan gambar tertanam di dalam halaman & memadatkan *stream* dokumen tanpa merusak keterbacaan teks.
+  - **Compress MP4 (`.mp4`)** – mengompresi video & audio H.264 adaptif secara cepat dan halus.
+  - **Compress Word (`.docx`)** – merampingkan media gambar di dalam `word/media/` serta mengoptimalkan struktur XML dan arsip dokumen.
+- **3 Opsi Hasil Kompresi Sekaligus (Perbandingan *Before vs After* Interaktif)**:
+  1. **Ukuran Paling Minim (*Paling Kecil*)** – kompresi maksimal ke ukuran terkecil yang memungkinkan tanpa menghancurkan file.
+  2. **Balanced (*Seimbang / Rekomendasi*)** – titik tengah ideal antara penghematan ukuran & ketajaman kualitas visual.
+  3. **Kompres Sedikit (*Mendekati Utama*)** – hanya memangkas beban berlebih sehingga ukuran mendekati file utama dengan kualitas penuh.
+- **Animasi Loading Screen & *Compression Theater*** – dilengkapi animasi *Splash Screen* tumpukan format file serta animasi proses kompresi (*orbital ring*, partikel konvergen, *hydraulic squeeze core*, *circular SVG progress gauge*, dan *pipeline tracker* 3 tahap).
+- **Palet Warna *Soft Pastel* Nyaman di Mata** – latar *Warm Alabaster* (`#F6F5F0`) dengan aksen *Sage Emerald*, *Terracotta Coral*, dan *Periwinkle Indigo*, dilengkapi **Mode Teduh (*Warm Dark*)**.
+
+## Struktur Proyek
+```text
+src/
+  Program.cs         # launcher WinForms, System Tray, embedded HTTP server & C# compression engine
+  app.manifest       # manifest High-DPI & non-admin execution
+static/
+  index.html         # UI utama, splash loading screen, compression theater & before-after board
+  css/style.css      # sistem desain soft pastel & keyframe animasi
+  js/app.js          # kontroler interaktif, drag-and-drop & pemilih 3 opsi hasil
+assets/
+  alapcompressor.ico # ikon aplikasi multi-resolusi
+app.py               # server & mesin kompresi Python (PyPDF, Pillow, FFmpeg)
+run.py               # script builder & runner cepat
+build.ps1 / build.bat
+.github/workflows/release.yml
+```
