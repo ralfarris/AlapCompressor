@@ -205,6 +205,12 @@ namespace AlapCompressor
         public string output_path { get; set; }
         public string error { get; set; }
         public Dictionary<string, VariantInfo> variants { get; set; }
+        public double crop_rx { get; set; }
+        public double crop_ry { get; set; }
+        public double crop_rw { get; set; }
+        public double crop_rh { get; set; }
+        public double trim_start { get; set; }
+        public double trim_end { get; set; }
     }
 
     internal sealed class VariantInfo
@@ -393,7 +399,7 @@ namespace AlapCompressor
                     WriteResponse(stream, 200, "application/pdf", pdf, "Sample-Brosur-AlapCompressor.pdf");
                     return;
                 }
-                if (kind == "mp4")
+                if (kind == "mp4" || kind == "crop")
                 {
                     byte[] mp4 = CompressionEngine.GenerateSampleMp4(_tempRoot);
                     WriteResponse(stream, 200, "video/mp4", mp4, "Sample-Video-AlapCompressor.mp4");
@@ -435,8 +441,16 @@ namespace AlapCompressor
 
             string origName = Path.GetFileName(string.IsNullOrEmpty(parsed.FileName) ? "dokumen.pdf" : parsed.FileName);
             string fileType = parsed.Fields.ContainsKey("file_type") ? parsed.Fields["file_type"].ToLowerInvariant() : "pdf";
-            string rawLevel = parsed.Fields.ContainsKey("level") ? parsed.Fields["level"].ToLowerInvariant() : "balanced";
-            string selectedTier = (rawLevel == "minim" || rawLevel == "extreme") ? "minim" : (rawLevel == "light" ? "light" : "balanced");
+            string defaultLv = fileType == "crop" ? "light" : "balanced";
+            string rawLevel = parsed.Fields.ContainsKey("level") ? parsed.Fields["level"].ToLowerInvariant() : defaultLv;
+            string selectedTier = (rawLevel == "minim" || rawLevel == "extreme") ? "minim" : ((rawLevel == "light" || rawLevel == "pure") ? "light" : "balanced");
+
+            double rx = ParseDoubleField(parsed.Fields, "crop_rx", 0.0);
+            double ry = ParseDoubleField(parsed.Fields, "crop_ry", 0.0);
+            double rw = ParseDoubleField(parsed.Fields, "crop_rw", 1.0);
+            double rh = ParseDoubleField(parsed.Fields, "crop_rh", 1.0);
+            double tStart = ParseDoubleField(parsed.Fields, "trim_start", 0.0);
+            double tEnd = ParseDoubleField(parsed.Fields, "trim_end", 0.0);
 
             string jobId = Guid.NewGuid().ToString("N").Substring(0, 12);
             string jobDir = Path.Combine(_tempRoot, jobId);
@@ -450,18 +464,35 @@ namespace AlapCompressor
                 job_id = jobId,
                 status = "queued",
                 progress = 5,
-                stage = "Menyiapkan 3 opsi kompresi...",
+                stage = fileType == "crop" ? "Menyiapkan proses pemotongan (crop) video..." : "Menyiapkan 3 opsi kompresi...",
                 original_name = origName,
                 download_name = origName,
                 original_size = parsed.FileBytes.Length,
                 file_type = fileType,
                 selected_tier = selectedTier,
+                crop_rx = rx,
+                crop_ry = ry,
+                crop_rw = rw,
+                crop_rh = rh,
+                trim_start = tStart,
+                trim_end = tEnd,
                 variants = new Dictionary<string, VariantInfo>()
             };
             _jobs[jobId] = job;
 
             ThreadPool.QueueUserWorkItem(_ => CompressionEngine.RunAllTiers(job, inputPath, jobDir));
             WriteJson(stream, 200, new { job_id = jobId, status = "queued" });
+        }
+
+        private static double ParseDoubleField(Dictionary<string, string> fields, string key, double fallback)
+        {
+            if (!fields.ContainsKey(key)) return fallback;
+            double v;
+            if (double.TryParse(fields[key], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v))
+            {
+                return v;
+            }
+            return fallback;
         }
 
         private static byte[] ReadEmbeddedResource(string name)
@@ -634,20 +665,32 @@ namespace AlapCompressor
                 job.stage = "Menganalisis struktur file & menyiapkan 3 opsi kompresi...";
 
                 string stem = Path.GetFileNameWithoutExtension(job.original_name);
-                string ext = job.file_type == "mp4" ? ".mp4" : (job.file_type == "word" ? ".docx" : ".pdf");
+                string ext = (job.file_type == "mp4" || job.file_type == "crop") ? ".mp4" : (job.file_type == "word" ? ".docx" : ".pdf");
                 var variants = new Dictionary<string, VariantInfo>();
 
                 for (int i = 0; i < Tiers.Length; i++)
                 {
                     string tier = Tiers[i];
                     job.progress = 15 + i * 28;
-                    job.stage = tier == "minim"
-                        ? "Meracik Opsi 1/3: Ukuran Paling Minim (Kompresi Maksimal Aman)..."
-                        : (tier == "balanced"
-                            ? "Meracik Opsi 2/3: Balanced (Seimbang Kualitas & Ukuran)..."
-                            : "Meracik Opsi 3/3: Kompres Sedikit (Mendekati Ukuran Utama)...");
+                    if (job.file_type == "crop")
+                    {
+                        job.stage = tier == "minim"
+                            ? "Memproses Opsi 1/3: Crop + Ukuran Paling Minim..."
+                            : (tier == "balanced"
+                                ? "Memproses Opsi 2/3: Crop + Balanced (Seimbang)..."
+                                : "Memproses Opsi 3/3: Murni Crop Video (Kualitas Asli)...");
+                    }
+                    else
+                    {
+                        job.stage = tier == "minim"
+                            ? "Meracik Opsi 1/3: Ukuran Paling Minim (Kompresi Maksimal Aman)..."
+                            : (tier == "balanced"
+                                ? "Meracik Opsi 2/3: Balanced (Seimbang Kualitas & Ukuran)..."
+                                : "Meracik Opsi 3/3: Kompres Sedikit (Mendekati Ukuran Utama)...");
+                    }
 
-                    string outName = stem + "-" + tier + ext;
+                    string suffix = job.file_type == "crop" ? ("cropped-" + tier) : tier;
+                    string outName = stem + "-" + suffix + ext;
                     string outPath = Path.Combine(jobDir, outName);
 
                     if (job.file_type == "word")
@@ -662,27 +705,53 @@ namespace AlapCompressor
                     {
                         CompressMp4Tier(inputPath, outPath, tier);
                     }
+                    else if (job.file_type == "crop")
+                    {
+                        CropMp4Tier(inputPath, outPath, tier, job);
+                    }
 
                     long cSize = new FileInfo(outPath).Length;
                     long savedB = Math.Max(0L, job.original_size - cSize);
                     double savedP = job.original_size > 0 ? Math.Round((savedB * 100.0) / job.original_size, 1) : 0.0;
 
-                    variants[tier] = new VariantInfo
+                    if (job.file_type == "crop")
                     {
-                        tier = tier,
-                        title = tier == "minim" ? "Ukuran Paling Minim" : (tier == "balanced" ? "Balanced (Seimbang)" : "Kompres Sedikit"),
-                        badge = tier == "minim" ? "Paling Kecil" : (tier == "balanced" ? "Rekomendasi" : "Mendekati Asli"),
-                        desc = tier == "minim"
-                            ? "Kompresi maksimal hingga ukuran terkecil tanpa merusak struktur & keterbacaan file."
-                            : (tier == "balanced"
-                                ? "Keseimbangan ideal antara penghematan ruang penyimpanan & ketajaman kualitas visual."
-                                : "Hanya memangkas beban berlebih agar ukuran sedikit lebih ringan dengan kualitas mendekati file utama."),
-                        compressed_size = cSize,
-                        saved_bytes = savedB,
-                        saved_percent = savedP,
-                        download_name = outName,
-                        output_path = outPath
-                    };
+                        variants[tier] = new VariantInfo
+                        {
+                            tier = tier,
+                            title = tier == "minim" ? "Crop + Ukuran Minim" : (tier == "balanced" ? "Crop + Balanced" : "Murni Crop Saja"),
+                            badge = tier == "minim" ? "Paling Kecil" : (tier == "balanced" ? "Seimbang" : "Kualitas Asli"),
+                            desc = tier == "minim"
+                                ? "Memotong area/durasi video ditambah kompresi maksimal aman agar ukuran paling hemat."
+                                : (tier == "balanced"
+                                    ? "Memotong area/durasi video sekaligus merampingkan bitrate secara seimbang."
+                                    : "Hanya memotong area & durasi video sesuai pilihanmu tanpa mengurangi ketajaman asli."),
+                            compressed_size = cSize,
+                            saved_bytes = savedB,
+                            saved_percent = savedP,
+                            download_name = outName,
+                            output_path = outPath
+                        };
+                    }
+                    else
+                    {
+                        variants[tier] = new VariantInfo
+                        {
+                            tier = tier,
+                            title = tier == "minim" ? "Ukuran Paling Minim" : (tier == "balanced" ? "Balanced (Seimbang)" : "Kompres Sedikit"),
+                            badge = tier == "minim" ? "Paling Kecil" : (tier == "balanced" ? "Rekomendasi" : "Mendekati Asli"),
+                            desc = tier == "minim"
+                                ? "Kompresi maksimal hingga ukuran terkecil tanpa merusak struktur & keterbacaan file."
+                                : (tier == "balanced"
+                                    ? "Keseimbangan ideal antara penghematan ruang penyimpanan & ketajaman kualitas visual."
+                                    : "Hanya memangkas beban berlebih agar ukuran sedikit lebih ringan dengan kualitas mendekati file utama."),
+                            compressed_size = cSize,
+                            saved_bytes = savedB,
+                            saved_percent = savedP,
+                            download_name = outName,
+                            output_path = outPath
+                        };
+                    }
                 }
 
                 sw.Stop();
@@ -862,6 +931,60 @@ namespace AlapCompressor
             {
                 return false;
             }
+        }
+
+        private static void CropMp4Tier(string inputPath, string outputPath, string tier, JobState job)
+        {
+            string ffmpeg = FindFfmpeg();
+            if (!string.IsNullOrEmpty(ffmpeg) && File.Exists(ffmpeg))
+            {
+                double rx = Math.Max(0.0, Math.Min(0.95, job.crop_rx));
+                double ry = Math.Max(0.0, Math.Min(0.95, job.crop_ry));
+                double rw = Math.Max(0.05, Math.Min(1.0 - rx, job.crop_rw));
+                double rh = Math.Max(0.05, Math.Min(1.0 - ry, job.crop_rh));
+                double areaFactor = Math.Max(0.12, rw * rh);
+
+                long origSize = new FileInfo(inputPath).Length;
+                double ratio = tier == "minim"
+                    ? Math.Max(0.15, areaFactor * 0.35)
+                    : (tier == "balanced"
+                        ? Math.Max(0.28, areaFactor * 0.62)
+                        : Math.Max(0.38, Math.Min(0.92, areaFactor * 0.95)));
+
+                string audioBr = tier == "minim" ? "64k" : (tier == "balanced" ? "112k" : "160k");
+                int targetBps = Math.Max(65000, (int)((origSize * 8 / 3.0) * ratio));
+
+                string cropFilter = string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "crop=trunc(iw*{0:F4}/2)*2:trunc(ih*{1:F4}/2)*2:trunc(iw*{2:F4}/2)*2:trunc(ih*{3:F4}/2)*2",
+                    rw, rh, rx, ry);
+
+                string trimArgs = "";
+                if (job.trim_start > 0.05)
+                {
+                    trimArgs += string.Format(System.Globalization.CultureInfo.InvariantCulture, "-ss {0:F2} ", job.trim_start);
+                }
+                if (job.trim_end > job.trim_start + 0.1)
+                {
+                    trimArgs += string.Format(System.Globalization.CultureInfo.InvariantCulture, "-to {0:F2} ", job.trim_end);
+                }
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffmpeg,
+                    Arguments = string.Format(
+                        "{0}-y -loglevel error -i \"{1}\" -vf \"{2}\" -c:v libx264 -b:v {3} -maxrate {4} -bufsize {5} -preset veryfast -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a {6} \"{7}\"",
+                        trimArgs, inputPath, cropFilter, targetBps, (int)(targetBps * 1.1), targetBps * 2, audioBr, outputPath),
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using (var p = Process.Start(psi))
+                {
+                    p.WaitForExit(60000);
+                }
+                if (File.Exists(outputPath) && new FileInfo(outputPath).Length > 0) return;
+            }
+            File.Copy(inputPath, outputPath, true);
         }
 
         private static void CompressMp4Tier(string inputPath, string outputPath, string tier)

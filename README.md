@@ -39,10 +39,11 @@ Lalu buka **`http://127.0.0.1:8080`** di browser.
 ## Fitur Utama
 
 - **Single-File Portable (`AlapCompressor.exe`)** – cukup 1 file `.exe` (~138 KB) yang sudah memuat seluruh aset antarmuka di dalamnya dan berjalan dengan ikon di *System Tray*.
-- **Tiga Jenis File Utama**:
+- **Empat Fitur Utama (Kompresi & Crop Video)**:
   - **Compress PDF (`.pdf`)** – mengoptimalkan gambar tertanam di dalam halaman & memadatkan *stream* dokumen tanpa merusak keterbacaan teks.
   - **Compress MP4 (`.mp4`)** – mengompresi video & audio H.264 adaptif secara cepat dan halus.
   - **Compress Word (`.docx`)** – merampingkan media gambar di dalam `word/media/` serta mengoptimalkan struktur XML dan arsip dokumen.
+  - **Crop Video (`.mp4`)** – memotong area bingkai layar video secara interaktif (`1:1`, `9:16`, `16:9`, `4:3`, `Tengah 75%`, atau *drag & resize* bebas) serta memotong durasi awal–akhir untuk mengurangi ukuran file secara alami dengan opsi **Murni Crop Saja (*Kualitas Asli*)** tanpa harus dikompresi berlebih.
 - **3 Opsi Hasil Kompresi Sekaligus (Perbandingan *Before vs After* Interaktif)**:
   1. **Ukuran Paling Minim (*Paling Kecil*)** – kompresi maksimal ke ukuran terkecil yang memungkinkan tanpa menghancurkan file.
   2. **Balanced (*Seimbang / Rekomendasi*)** – titik tengah ideal antara penghematan ukuran & ketajaman kualitas visual.

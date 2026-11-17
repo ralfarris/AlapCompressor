@@ -333,6 +333,102 @@ def compress_mp4_single_tier(
             alt_path.unlink(missing_ok=True)
 
 
+def crop_mp4_single_tier(
+    input_path: Path,
+    output_path: Path,
+    tier: str,
+    duration_sec: float,
+    orig_size: int,
+    crop_params: dict,
+    progress_cb=None,
+):
+    rx = max(0.0, min(0.95, float(crop_params.get("rx", 0.0))))
+    ry = max(0.0, min(0.95, float(crop_params.get("ry", 0.0))))
+    rw = max(0.05, min(1.0 - rx, float(crop_params.get("rw", 1.0))))
+    rh = max(0.05, min(1.0 - ry, float(crop_params.get("rh", 1.0))))
+    trim_start = max(0.0, float(crop_params.get("trim_start", 0.0)))
+    trim_end = float(crop_params.get("trim_end", 0.0))
+
+    crop_filter = (
+        f"crop=trunc(iw*{rw:.4f}/2)*2:trunc(ih*{rh:.4f}/2)*2:"
+        f"trunc(iw*{rx:.4f}/2)*2:trunc(ih*{ry:.4f}/2)*2"
+    )
+
+    area_factor = max(0.12, rw * rh)
+    orig_total_bps = int((orig_size * 8) / max(duration_sec, 0.5)) if duration_sec > 0 else 1_500_000
+
+    if tier == "minim":
+        # Crop + Maximum safe compression
+        ratio_cap = max(0.15, area_factor * 0.35)
+        audio_br = "64k"
+        audio_bps = 64_000
+    elif tier == "balanced":
+        # Crop + Balanced optimization
+        ratio_cap = max(0.28, area_factor * 0.62)
+        audio_br = "112k"
+        audio_bps = 112_000
+    else:  # light == Pure Crop (No extra compression, preserves visual quality proportional to cropped area)
+        ratio_cap = max(0.38, min(0.92, area_factor * 0.95))
+        audio_br = "160k"
+        audio_bps = 160_000
+
+    target_total_bps = max(audio_bps + 45_000, int(orig_total_bps * ratio_cap))
+    target_video_bps = max(45_000, target_total_bps - audio_bps)
+
+    cmd = [FFMPEG_EXE, "-y", "-loglevel", "error"]
+    if trim_start > 0.05:
+        cmd.extend(["-ss", f"{trim_start:.2f}"])
+    if trim_end > trim_start + 0.1:
+        cmd.extend(["-to", f"{trim_end:.2f}"])
+
+    cmd.extend([
+        "-i", str(input_path),
+        "-vf", crop_filter,
+        "-c:v", "libx264",
+        "-b:v", str(target_video_bps),
+        "-maxrate", str(int(target_video_bps * 1.1)),
+        "-bufsize", str(target_video_bps * 2),
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-c:a", "aac",
+        "-b:a", audio_br,
+        "-progress", "pipe:1",
+        "-nostats",
+        str(output_path),
+    ])
+
+    eff_duration = (trim_end - trim_start) if (trim_end > trim_start + 0.1) else duration_sec
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+    )
+
+    last_lines = []
+    for line in proc.stdout:
+        line = line.strip()
+        if line:
+            last_lines.append(line)
+            if len(last_lines) > 10:
+                last_lines.pop(0)
+        if line.startswith("out_time_ms=") and eff_duration > 0 and progress_cb:
+            try:
+                out_ms = int(line.split("=", 1)[1])
+                frac = min(1.0, max(0.0, out_ms / (eff_duration * 1_000_000)))
+                progress_cb(frac)
+            except ValueError:
+                pass
+
+    proc.wait()
+    if proc.returncode != 0 or not output_path.exists():
+        err_text = " | ".join(last_lines)
+        raise RuntimeError(f"Gagal memotong (crop) video MP4 ({tier}): {err_text}")
+
+
 def compress_pdf_single_tier(input_path: Path, output_path: Path, tier: str, progress_cb=None):
     cfg = {
         "minim": {"max_dim": 720, "quality": 28, "deflate": 9, "strip_meta": True},
@@ -485,22 +581,35 @@ def compress_word_single_tier(input_path: Path, output_path: Path, tier: str, pr
 # ---------------------------------------------------------------------------
 # Multi-Tier Job Runner (Generates all 3 options: minim, balanced, light)
 # ---------------------------------------------------------------------------
-def run_compression_worker(job_id: str, file_type: str, selected_tier: str, input_path: Path, job_dir: Path, orig_filename: str):
+def run_compression_worker(
+    job_id: str,
+    file_type: str,
+    selected_tier: str,
+    input_path: Path,
+    job_dir: Path,
+    orig_filename: str,
+    crop_params: dict | None = None,
+):
     start_time = time.time()
+    crop_params = crop_params or {}
     try:
         orig_size = input_path.stat().st_size
         stem = Path(orig_filename).stem
-        out_ext = {"mp4": ".mp4", "pdf": ".pdf", "word": ".docx"}.get(file_type, Path(orig_filename).suffix or ".bin")
+        out_ext = {"mp4": ".mp4", "crop": ".mp4", "pdf": ".pdf", "word": ".docx"}.get(
+            file_type, Path(orig_filename).suffix or ".bin"
+        )
 
         update_job(
             job_id,
             status="processing",
             progress=8,
-            stage="Menganalisis struktur file & menyiapkan 3 opsi kompresi...",
+            stage="Menganalisis frame video & menyiapkan pemotongan (crop)..."
+            if file_type == "crop"
+            else "Menganalisis struktur file & menyiapkan 3 opsi kompresi...",
         )
 
         duration_sec = 0.0
-        if file_type == "mp4":
+        if file_type in ("mp4", "crop"):
             probe = subprocess.run(
                 [FFMPEG_EXE, "-i", str(input_path)],
                 stdin=subprocess.DEVNULL,
@@ -514,17 +623,43 @@ def run_compression_worker(job_id: str, file_type: str, selected_tier: str, inpu
                 duration_sec = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
 
         variants = {}
-        tier_ranges = {
-            "minim": (10, 42, "Meracik Opsi 1/3: Ukuran Paling Minim (Kompresi Maksimal Aman)..."),
-            "balanced": (42, 72, "Meracik Opsi 2/3: Balanced (Seimbang Kualitas & Ukuran)..."),
-            "light": (72, 95, "Meracik Opsi 3/3: Kompres Sedikit (Mendekati Ukuran Utama)..."),
-        }
+        if file_type == "crop":
+            tier_ranges = {
+                "minim": (10, 42, "Memproses Opsi 1/3: Crop + Ukuran Paling Minim..."),
+                "balanced": (42, 72, "Memproses Opsi 2/3: Crop + Balanced (Seimbang)..."),
+                "light": (72, 95, "Memproses Opsi 3/3: Murni Crop Video (Kualitas Asli)..."),
+            }
+            crop_meta = {
+                "minim": {
+                    "title": "Crop + Ukuran Minim",
+                    "badge": "Paling Kecil",
+                    "desc": "Memotong area/durasi video ditambah kompresi maksimal aman agar ukuran paling hemat.",
+                },
+                "balanced": {
+                    "title": "Crop + Balanced",
+                    "badge": "Seimbang",
+                    "desc": "Memotong area/durasi video sekaligus merampingkan bitrate secara seimbang.",
+                },
+                "light": {
+                    "title": "Murni Crop Saja",
+                    "badge": "Kualitas Asli",
+                    "desc": "Hanya memotong area & durasi video sesuai pilihanmu tanpa mengurangi ketajaman asli.",
+                },
+            }
+        else:
+            tier_ranges = {
+                "minim": (10, 42, "Meracik Opsi 1/3: Ukuran Paling Minim (Kompresi Maksimal Aman)..."),
+                "balanced": (42, 72, "Meracik Opsi 2/3: Balanced (Seimbang Kualitas & Ukuran)..."),
+                "light": (72, 95, "Meracik Opsi 3/3: Kompres Sedikit (Mendekati Ukuran Utama)..."),
+            }
+            crop_meta = TIER_META
 
         for tier in TIER_ORDER:
             p_start, p_end, stage_msg = tier_ranges[tier]
             update_job(job_id, progress=p_start, stage=stage_msg)
 
-            tier_filename = f"{stem}-{tier}{out_ext}"
+            suffix = f"cropped-{tier}" if file_type == "crop" else tier
+            tier_filename = f"{stem}-{suffix}{out_ext}"
             tier_out_path = job_dir / tier_filename
 
             def make_cb(ps, pe, msg):
@@ -535,14 +670,16 @@ def run_compression_worker(job_id: str, file_type: str, selected_tier: str, inpu
 
             cb = make_cb(p_start, p_end, stage_msg)
 
-            if file_type == "mp4":
+            if file_type == "crop":
+                crop_mp4_single_tier(input_path, tier_out_path, tier, duration_sec, orig_size, crop_params, cb)
+            elif file_type == "mp4":
                 compress_mp4_single_tier(input_path, tier_out_path, tier, duration_sec, orig_size, cb)
             elif file_type == "pdf":
                 compress_pdf_single_tier(input_path, tier_out_path, tier, cb)
             elif file_type == "word":
                 compress_word_single_tier(input_path, tier_out_path, tier, cb)
             else:
-                raise ValueError(f"Tipe kompresi tidak dikenali: {file_type}")
+                raise ValueError(f"Tipe proses tidak dikenali: {file_type}")
 
             c_size = tier_out_path.stat().st_size
             saved_b = max(0, orig_size - c_size)
@@ -550,9 +687,9 @@ def run_compression_worker(job_id: str, file_type: str, selected_tier: str, inpu
 
             variants[tier] = {
                 "tier": tier,
-                "title": TIER_META[tier]["title"],
-                "badge": TIER_META[tier]["badge"],
-                "desc": TIER_META[tier]["desc"],
+                "title": crop_meta[tier]["title"],
+                "badge": crop_meta[tier]["badge"],
+                "desc": crop_meta[tier]["desc"],
                 "compressed_size": c_size,
                 "saved_bytes": saved_b,
                 "saved_percent": saved_p,
@@ -686,7 +823,7 @@ class AlapCompressorHandler(BaseHTTPRequestHandler):
                     content = generate_sample_docx()
                     filename = "Sample-Laporan-AlapCompressor.docx"
                     mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                elif kind == "mp4":
+                elif kind in ("mp4", "crop"):
                     content = generate_sample_mp4()
                     filename = "Sample-Video-AlapCompressor.mp4"
                     mime = "video/mp4"
@@ -743,16 +880,31 @@ class AlapCompressorHandler(BaseHTTPRequestHandler):
             orig_filename = Path(file_info["filename"] or "document").name
             file_bytes = file_info["content"]
             file_type = fields.get("file_type", "pdf").lower().strip()
-            raw_level = fields.get("level", "balanced").lower().strip()
-            # Map legacy level names if any
+            default_lv = "light" if file_type == "crop" else "balanced"
+            raw_level = fields.get("level", default_lv).lower().strip()
             level_map = {
                 "extreme": "minim",
                 "minim": "minim",
                 "recommended": "balanced",
                 "balanced": "balanced",
                 "light": "light",
+                "pure": "light",
             }
-            selected_tier = level_map.get(raw_level, "balanced")
+            selected_tier = level_map.get(raw_level, default_lv)
+
+            crop_params = {}
+            if file_type == "crop":
+                try:
+                    crop_params = {
+                        "rx": float(fields.get("crop_rx", "0")),
+                        "ry": float(fields.get("crop_ry", "0")),
+                        "rw": float(fields.get("crop_rw", "1")),
+                        "rh": float(fields.get("crop_rh", "1")),
+                        "trim_start": float(fields.get("trim_start", "0") or "0"),
+                        "trim_end": float(fields.get("trim_end", "0") or "0"),
+                    }
+                except ValueError:
+                    crop_params = {"rx": 0.0, "ry": 0.0, "rw": 1.0, "rh": 1.0}
 
             job_id = uuid.uuid4().hex[:12]
             job_dir = TEMP_JOBS_DIR / job_id
@@ -766,7 +918,7 @@ class AlapCompressorHandler(BaseHTTPRequestHandler):
                     "job_id": job_id,
                     "status": "queued",
                     "progress": 4,
-                    "stage": "Menyiapkan ruang kerja kompresi...",
+                    "stage": "Menyiapkan ruang kerja...",
                     "original_name": orig_filename,
                     "download_name": orig_filename,
                     "original_size": len(file_bytes),
@@ -782,7 +934,7 @@ class AlapCompressorHandler(BaseHTTPRequestHandler):
 
             worker = threading.Thread(
                 target=run_compression_worker,
-                args=(job_id, file_type, selected_tier, input_path, job_dir, orig_filename),
+                args=(job_id, file_type, selected_tier, input_path, job_dir, orig_filename, crop_params),
                 daemon=True,
             )
             worker.start()

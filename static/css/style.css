@@ -38,6 +38,13 @@
   --word-border: #C5D6F0;
   --word-glow: rgba(74, 111, 165, 0.18);
 
+  /* 4. Crop Video — Soft Dusty Mauve-Plum */
+  --crop-primary: #8B6386;
+  --crop-primary-hover: #734F6E;
+  --crop-soft: #F6EFF6;
+  --crop-border: #DFC8DE;
+  --crop-glow: rgba(139, 99, 134, 0.18);
+
   /* Active Dynamic Theme Variables (Updated via [data-tool="..."]) */
   --accent: var(--pdf-primary);
   --accent-hover: var(--pdf-primary-hover);
@@ -80,6 +87,14 @@ html[data-tool="word"] {
   --accent-glow: var(--word-glow);
 }
 
+html[data-tool="crop"] {
+  --accent: var(--crop-primary);
+  --accent-hover: var(--crop-primary-hover);
+  --accent-soft: var(--crop-soft);
+  --accent-border: var(--crop-border);
+  --accent-glow: var(--crop-glow);
+}
+
 /* Warm Dark Mode ("Mode Teduh") — Soft Slate, never harsh pitch black */
 html[data-theme="dark"] {
   --bg-page: #181C20;
@@ -102,6 +117,9 @@ html[data-theme="dark"] {
 
   --word-soft: rgba(74, 111, 165, 0.18);
   --word-border: rgba(74, 111, 165, 0.38);
+
+  --crop-soft: rgba(139, 99, 134, 0.18);
+  --crop-border: rgba(139, 99, 134, 0.38);
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.28);
@@ -532,6 +550,7 @@ html[data-theme="dark"] .ambient-blob {
 .dot-pdf { background: var(--pdf-primary); }
 .dot-mp4 { background: var(--mp4-primary); }
 .dot-word { background: var(--word-primary); }
+.dot-crop { background: var(--crop-primary); }
 
 .topbar-actions {
   display: flex;
@@ -634,10 +653,10 @@ html[data-theme="dark"] .icon-sun { display: block; }
   color: var(--text-secondary);
 }
 
-/* Tool Selector Grid */
+/* Tool Selector Grid (2x2 spacious layout on desktop so text never collides) */
 .tools-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-bottom: 26px;
 }
@@ -680,6 +699,12 @@ html[data-theme="dark"] .icon-sun { display: block; }
   box-shadow: 0 10px 26px var(--word-glow);
 }
 
+.tool-card[data-tool-card="crop"].active {
+  border-color: var(--crop-primary);
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--crop-soft) 100%);
+  box-shadow: 0 10px 26px var(--crop-glow);
+}
+
 .tool-card-icon {
   width: 48px;
   height: 48px;
@@ -705,8 +730,14 @@ html[data-theme="dark"] .icon-sun { display: block; }
   color: var(--word-primary);
 }
 
+.icon-crop {
+  background: var(--crop-soft);
+  color: var(--crop-primary);
+}
+
 .tool-card-body {
   flex: 1;
+  min-width: 0;
 }
 
 .tool-card-top {
@@ -728,6 +759,8 @@ html[data-theme="dark"] .icon-sun { display: block; }
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tag-pdf {
@@ -743,6 +776,11 @@ html[data-theme="dark"] .icon-sun { display: block; }
 .tag-word {
   background: var(--word-soft);
   color: var(--word-primary);
+}
+
+.tag-crop {
+  background: var(--crop-soft);
+  color: var(--crop-primary);
 }
 
 .tool-card-body p {
@@ -948,6 +986,220 @@ html[data-theme="dark"] .icon-sun { display: block; }
 .btn-change-file:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* ==========================================================================
+   4B. INTERACTIVE VIDEO CROP STUDIO
+   ========================================================================== */
+.video-crop-studio {
+  background: var(--bg-surface-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  padding: 22px;
+  margin-bottom: 24px;
+}
+
+.crop-studio-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.crop-studio-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.crop-studio-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.crop-studio-title-group small {
+  font-size: 12.8px;
+  color: var(--text-secondary);
+}
+
+.crop-dim-pill {
+  padding: 6px 13px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.crop-ratio-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ratio-pill {
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ratio-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ratio-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.crop-stage-outer {
+  background: #1B1F24;
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.crop-video-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  max-width: 100%;
+  user-select: none;
+}
+
+#crop-preview-video {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+}
+
+.crop-box-overlay {
+  position: absolute;
+  top: 12.5%;
+  left: 12.5%;
+  width: 75%;
+  height: 75%;
+  border: 2.5px solid #FFFFFF;
+  box-shadow: 0 0 0 9999px rgba(15, 18, 22, 0.62);
+  cursor: move;
+  touch-action: none;
+}
+
+.crop-grid-line {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.grid-h1 { top: 33.33%; left: 0; right: 0; height: 1px; }
+.grid-h2 { top: 66.66%; left: 0; right: 0; height: 1px; }
+.grid-v1 { left: 33.33%; top: 0; bottom: 0; width: 1px; }
+.grid-v2 { left: 66.66%; top: 0; bottom: 0; width: 1px; }
+
+.crop-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #FFFFFF;
+  border: 2.5px solid var(--accent);
+  border-radius: 4px;
+  z-index: 3;
+}
+
+.handle-nw { top: -7px; left: -7px; cursor: nwse-resize; }
+.handle-ne { top: -7px; right: -7px; cursor: nesw-resize; }
+.handle-sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.handle-se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+
+.crop-controls-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.crop-playback-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-play-toggle {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-play-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.crop-time-readout {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-trim-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.trim-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.trim-field input {
+  width: 78px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* Compression Preset Cards */

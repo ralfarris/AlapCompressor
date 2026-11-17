@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AlapCompressor — Interactive Client Controller
+   AlapCompressor — Interactive Client Controller (PDF, MP4, Word & Video Crop)
    ========================================================================== */
 
 const TOOL_CONFIG = {
@@ -15,19 +15,21 @@ const TOOL_CONFIG = {
     dropSub: "Mendukung semua dokumen .PDF — diproses aman 100% di perangkatmu.",
     browseLabel: "Pilih File PDF",
     sampleLabel: "Coba File Contoh PDF",
+    ctaLabel: "Kompres PDF Sekarang",
   },
   mp4: {
     id: "mp4",
     badge: "MP4",
     accept: ".mp4,.mov,.mkv,.webm,video/mp4",
     heroBadge: "Kompresor Video H.264 Cepat",
-    heroTitle: "Kompres Video MP4 TanpaRibet & Tetap Jernih",
+    heroTitle: "Kompres Video MP4 Tanpa Ribet & Tetap Jernih",
     heroDesc:
       "Kurangi ukuran file video MP4 secara drastis menggunakan encoding H.264 adaptif yang menjaga kelancaran frame dan kualitas suara.",
     dropTitle: "Tarik & Lepaskan Video MP4 di Sini",
     dropSub: "Mendukung file video .MP4 — siap dikompresi dengan akselerasi FFmpeg.",
     browseLabel: "Pilih Video MP4",
     sampleLabel: "Coba Video Contoh MP4",
+    ctaLabel: "Kompres Video Sekarang",
   },
   word: {
     id: "word",
@@ -41,6 +43,21 @@ const TOOL_CONFIG = {
     dropSub: "Mendukung dokumen Microsoft Word (.DOCX) dengan gambar maupun tabel.",
     browseLabel: "Pilih File Word",
     sampleLabel: "Coba Dokumen Contoh Word",
+    ctaLabel: "Kompres Word Sekarang",
+  },
+  crop: {
+    id: "crop",
+    badge: "CROP",
+    accept: ".mp4,.mov,.mkv,.webm,video/mp4",
+    heroBadge: "Studio Crop Bingkai & Durasi Video",
+    heroTitle: "Crop Area & Durasi Video Agar Ukuran Lebih Hemat",
+    heroDesc:
+      "Potong bagian pinggir layar video (1:1, 9:16, 16:9, atau bebas) maupun durasinya untuk mengecilkan ukuran file tanpa harus menurunkan kualitas asli.",
+    dropTitle: "Tarik & Lepaskan Video yang Ingin Di-Crop",
+    dropSub: "Pilih area bingkai & durasi secara interaktif — kualitas visual tetap tajam.",
+    browseLabel: "Pilih Video untuk Di-Crop",
+    sampleLabel: "Coba Video Contoh MP4",
+    ctaLabel: "Potong (Crop) Video Sekarang",
   },
 };
 
@@ -53,6 +70,16 @@ const state = {
   pollTimer: null,
   displayedProgress: 0,
   history: [],
+  crop: {
+    rx: 0.125,
+    ry: 0.125,
+    rw: 0.75,
+    rh: 0.75,
+    videoWidth: 1280,
+    videoHeight: 720,
+    duration: 0,
+    objectUrl: null,
+  },
 };
 
 // DOM Elements
@@ -79,8 +106,35 @@ const selectedFilePanel = document.getElementById("selected-file-panel");
 const selectedFileBadge = document.getElementById("selected-file-badge");
 const selectedFileName = document.getElementById("selected-file-name");
 const selectedFileSize = document.getElementById("selected-file-size");
+const selectedFileStatusNote = document.getElementById("selected-file-status-note");
 const changeFileBtn = document.getElementById("change-file-btn");
 const startCompressBtn = document.getElementById("start-compress-btn");
+const startCompressBtnLabel = document.getElementById("start-compress-btn-label");
+
+// Video Crop Studio Elements
+const videoCropStudio = document.getElementById("video-crop-studio");
+const cropDimPill = document.getElementById("crop-dim-pill");
+const cropVideoWrap = document.getElementById("crop-video-wrap");
+const cropPreviewVideo = document.getElementById("crop-preview-video");
+const cropBoxOverlay = document.getElementById("crop-box-overlay");
+const cropPlayBtn = document.getElementById("crop-play-btn");
+const cropPlayLabel = document.getElementById("crop-play-label");
+const cropTimeReadout = document.getElementById("crop-time-readout");
+const trimStartInput = document.getElementById("trim-start-input");
+const trimEndInput = document.getElementById("trim-end-input");
+
+// Level Card Dynamic Text Elements
+const levelHeaderTitle = document.getElementById("level-header-title");
+const levelHeaderSub = document.getElementById("level-header-sub");
+const lvlTitleMinim = document.getElementById("lvl-title-minim");
+const lvlChipMinim = document.getElementById("lvl-chip-minim");
+const lvlDescMinim = document.getElementById("lvl-desc-minim");
+const lvlTitleBalanced = document.getElementById("lvl-title-balanced");
+const lvlChipBalanced = document.getElementById("lvl-chip-balanced");
+const lvlDescBalanced = document.getElementById("lvl-desc-balanced");
+const lvlTitleLight = document.getElementById("lvl-title-light");
+const lvlChipLight = document.getElementById("lvl-chip-light");
+const lvlDescLight = document.getElementById("lvl-desc-light");
 
 const viewSetup = document.getElementById("view-setup");
 const viewCompressing = document.getElementById("view-compressing");
@@ -143,8 +197,8 @@ function runSplashAnimation(durationMs = 1550) {
   let start = null;
 
   const steps = [
-    { at: 0, text: "Menyiapkan ruang kerja kompresi pastel..." },
-    { at: 35, text: "Memuat modul kompresi PDF, MP4 & Word (.DOCX)..." },
+    { at: 0, text: "Menyiapkan ruang kerja kompresi & studio crop pastel..." },
+    { at: 35, text: "Memuat modul PDF, MP4, Word (.DOCX) & Crop Video..." },
     { at: 72, text: "Mengkalibrasi kualitas visual & rasio ukuran..." },
     { at: 95, text: "Siap digunakan!" },
   ];
@@ -179,6 +233,60 @@ function runSplashAnimation(durationMs = 1550) {
 // ---------------------------------------------------------------------------
 // 2. Tool Selection & Theme Switching
 // ---------------------------------------------------------------------------
+function syncLevelCardCopyForTool(toolKey) {
+  if (toolKey === "crop") {
+    levelHeaderTitle.textContent = "Pilih Mode Output Video Hasil Crop";
+    levelHeaderSub.textContent = "Kamu bisa memilih murni crop tanpa kompresi atau sekaligus diperkecil lagi";
+
+    lvlTitleMinim.textContent = "Crop + Ukuran Minim";
+    lvlChipMinim.textContent = "Paling Kecil";
+    lvlDescMinim.textContent =
+      "Memotong area/durasi video ditambah kompresi maksimal aman untuk hasil ukuran terkecil.";
+
+    lvlTitleBalanced.textContent = "Crop + Balanced";
+    lvlChipBalanced.textContent = "Seimbang";
+    lvlDescBalanced.textContent =
+      "Memotong area/durasi video sekaligus merampingkan bitrate secara seimbang.";
+
+    lvlTitleLight.textContent = "Murni Crop Saja";
+    lvlChipLight.textContent = "Kualitas Asli";
+    lvlDescLight.textContent =
+      "Hanya memotong area & durasi video sesuai pilihanmu tanpa mengurangi ketajaman visual asli.";
+
+    setCompressionLevel("light");
+  } else {
+    levelHeaderTitle.textContent = "Pilih Opsi Prioritas Kompresi";
+    levelHeaderSub.textContent = "Ketiga opsi tetap akan disiapkan agar bisa kamu bandingkan di hasil akhir";
+
+    lvlTitleMinim.textContent = "Ukuran Paling Minim";
+    lvlChipMinim.textContent = "Paling Kecil";
+    lvlDescMinim.textContent =
+      "Kompresi maksimal ke ukuran terkecil yang memungkinkan tanpa merusak isi & keterbacaan file.";
+
+    lvlTitleBalanced.textContent = "Balanced (Seimbang)";
+    lvlChipBalanced.textContent = "Rekomendasi";
+    lvlDescBalanced.textContent =
+      "Keseimbangan ideal: ukuran file jauh lebih hemat dengan ketajaman visual yang tetap terjaga.";
+
+    lvlTitleLight.textContent = "Kompres Sedikit";
+    lvlChipLight.textContent = "Mendekati Utama";
+    lvlDescLight.textContent =
+      "Hanya memangkas sedikit beban berlebih agar ukuran mendekati file utama dengan kualitas penuh.";
+
+    setCompressionLevel("balanced");
+  }
+}
+
+function setCompressionLevel(level) {
+  state.compressionLevel = level;
+  document.querySelectorAll("[data-level-card]").forEach((el) => {
+    const isMatch = el.getAttribute("data-level-card") === level;
+    el.classList.toggle("selected", isMatch);
+    const radio = el.querySelector('input[type="radio"]');
+    if (radio) radio.checked = isMatch;
+  });
+}
+
 function selectTool(toolKey, keepFile = false) {
   if (!TOOL_CONFIG[toolKey]) return;
   state.activeTool = toolKey;
@@ -205,7 +313,10 @@ function selectTool(toolKey, keepFile = false) {
   dropzoneSub.textContent = cfg.dropSub;
   browseBtnLabel.textContent = cfg.browseLabel;
   sampleBtnLabel.textContent = cfg.sampleLabel;
+  if (startCompressBtnLabel) startCompressBtnLabel.textContent = cfg.ctaLabel;
   fileInput.setAttribute("accept", cfg.accept);
+
+  syncLevelCardCopyForTool(toolKey);
 
   if (!keepFile) {
     resetToSetupView();
@@ -216,14 +327,175 @@ function detectToolFromFilename(filename) {
   const lower = (filename || "").toLowerCase();
   if (lower.endsWith(".pdf")) return "pdf";
   if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") || lower.endsWith(".webm")) {
-    return "mp4";
+    return state.activeTool === "crop" ? "crop" : "mp4";
   }
   if (lower.endsWith(".docx") || lower.endsWith(".doc")) return "word";
   return null;
 }
 
 // ---------------------------------------------------------------------------
-// 3. File Selection & Sample File Loader
+// 3. Interactive Video Crop Studio Logic
+// ---------------------------------------------------------------------------
+function updateCropOverlayDOM() {
+  const { rx, ry, rw, rh, videoWidth, videoHeight } = state.crop;
+  cropBoxOverlay.style.left = `${(rx * 100).toFixed(2)}%`;
+  cropBoxOverlay.style.top = `${(ry * 100).toFixed(2)}%`;
+  cropBoxOverlay.style.width = `${(rw * 100).toFixed(2)}%`;
+  cropBoxOverlay.style.height = `${(rh * 100).toFixed(2)}%`;
+
+  const outW = Math.max(2, Math.floor((videoWidth * rw) / 2) * 2);
+  const outH = Math.max(2, Math.floor((videoHeight * rh) / 2) * 2);
+  const areaReduction = Math.max(0, Math.round((1 - rw * rh) * 100));
+
+  cropDimPill.innerHTML = `${videoWidth} &times; ${videoHeight} px &rarr; <strong>${outW} &times; ${outH} px</strong> (-${areaReduction}% area)`;
+}
+
+function applyCropPreset(preset) {
+  const vw = state.crop.videoWidth || 1280;
+  const vh = state.crop.videoHeight || 720;
+
+  let rw = 0.75;
+  let rh = 0.75;
+
+  if (preset === "free") {
+    rw = 1.0;
+    rh = 1.0;
+  } else if (preset === "center75") {
+    rw = 0.75;
+    rh = 0.75;
+  } else {
+    const parts = preset.split(":");
+    if (parts.length === 2) {
+      const targetAspect = parseFloat(parts[0]) / parseFloat(parts[1]);
+      const videoAspect = vw / vh;
+      if (targetAspect > videoAspect) {
+        rw = 0.9;
+        rh = (rw * videoAspect) / targetAspect;
+      } else {
+        rh = 0.9;
+        rw = (rh * targetAspect) / videoAspect;
+      }
+    }
+  }
+
+  rw = Math.max(0.15, Math.min(1.0, rw));
+  rh = Math.max(0.15, Math.min(1.0, rh));
+  state.crop.rw = rw;
+  state.crop.rh = rh;
+  state.crop.rx = (1.0 - rw) / 2;
+  state.crop.ry = (1.0 - rh) / 2;
+
+  document.querySelectorAll("[data-crop-preset]").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-crop-preset") === preset);
+  });
+
+  updateCropOverlayDOM();
+}
+
+function setupVideoCropPreview(file) {
+  if (state.crop.objectUrl) {
+    URL.revokeObjectURL(state.crop.objectUrl);
+  }
+  const url = URL.createObjectURL(file);
+  state.crop.objectUrl = url;
+  cropPreviewVideo.src = url;
+  cropPreviewVideo.load();
+
+  cropPreviewVideo.onloadedmetadata = () => {
+    state.crop.videoWidth = cropPreviewVideo.videoWidth || 1280;
+    state.crop.videoHeight = cropPreviewVideo.videoHeight || 720;
+    state.crop.duration = cropPreviewVideo.duration || 0;
+
+    trimStartInput.value = "0";
+    trimEndInput.value = state.crop.duration > 0 ? state.crop.duration.toFixed(1) : "0";
+    cropTimeReadout.textContent = `0.0s / ${(state.crop.duration || 0).toFixed(1)}s`;
+
+    applyCropPreset("center75");
+  };
+
+  cropPreviewVideo.ontimeupdate = () => {
+    const cur = cropPreviewVideo.currentTime || 0;
+    const dur = state.crop.duration || cropPreviewVideo.duration || 0;
+    cropTimeReadout.textContent = `${cur.toFixed(1)}s / ${dur.toFixed(1)}s`;
+
+    const tEnd = parseFloat(trimEndInput.value) || 0;
+    const tStart = parseFloat(trimStartInput.value) || 0;
+    if (tEnd > tStart + 0.2 && cur >= tEnd) {
+      cropPreviewVideo.currentTime = tStart;
+    }
+  };
+}
+
+function initCropBoxPointerEvents() {
+  let dragMode = null; // 'move' | 'nw' | 'ne' | 'sw' | 'se'
+  let startX = 0;
+  let startY = 0;
+  let initCrop = null;
+
+  function onPointerDown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.target.getAttribute("data-handle");
+    dragMode = handle || "move";
+    startX = e.clientX;
+    startY = e.clientY;
+    initCrop = { ...state.crop };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!dragMode) return;
+    const rect = cropVideoWrap.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const dx = (e.clientX - startX) / rect.width;
+    const dy = (e.clientY - startY) / rect.height;
+    const minSize = 0.12;
+
+    let { rx, ry, rw, rh } = initCrop;
+
+    if (dragMode === "move") {
+      rx = Math.max(0, Math.min(1 - rw, rx + dx));
+      ry = Math.max(0, Math.min(1 - rh, ry + dy));
+    } else {
+      if (dragMode.includes("w")) {
+        const newLeft = Math.max(0, Math.min(rx + rw - minSize, rx + dx));
+        rw = rx + rw - newLeft;
+        rx = newLeft;
+      }
+      if (dragMode.includes("e")) {
+        rw = Math.max(minSize, Math.min(1 - rx, rw + dx));
+      }
+      if (dragMode.includes("n")) {
+        const newTop = Math.max(0, Math.min(ry + rh - minSize, ry + dy));
+        rh = ry + rh - newTop;
+        ry = newTop;
+      }
+      if (dragMode.includes("s")) {
+        rh = Math.max(minSize, Math.min(1 - ry, rh + dy));
+      }
+    }
+
+    state.crop.rx = rx;
+    state.crop.ry = ry;
+    state.crop.rw = rw;
+    state.crop.rh = rh;
+    updateCropOverlayDOM();
+  }
+
+  function onPointerUp() {
+    dragMode = null;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  }
+
+  cropBoxOverlay.addEventListener("pointerdown", onPointerDown);
+}
+
+// ---------------------------------------------------------------------------
+// 4. File Selection & Sample File Loader
 // ---------------------------------------------------------------------------
 function handleChosenFile(file) {
   if (!file) return;
@@ -231,7 +503,7 @@ function handleChosenFile(file) {
   const detected = detectToolFromFilename(file.name);
   if (detected && detected !== state.activeTool) {
     selectTool(detected, true);
-    showToast(`Otomatis beralih ke mode Compress ${TOOL_CONFIG[detected].badge}`);
+    showToast(`Otomatis beralih ke mode ${TOOL_CONFIG[detected].badge}`);
   } else if (!detected) {
     showToast("Mohon pilih file berformat .PDF, .MP4, atau .DOCX");
     return;
@@ -248,6 +520,17 @@ function handleChosenFile(file) {
   selectedFileBadge.textContent = cfg.badge;
   selectedFileName.textContent = file.name;
   selectedFileSize.textContent = formatBytes(file.size);
+  if (selectedFileStatusNote) {
+    selectedFileStatusNote.textContent =
+      state.activeTool === "crop" ? "Siap diatur area crop-nya" : "Siap dikompresi";
+  }
+
+  if (state.activeTool === "crop") {
+    videoCropStudio.classList.remove("hidden");
+    setupVideoCropPreview(file);
+  } else {
+    videoCropStudio.classList.add("hidden");
+  }
 
   selectedFilePanel.classList.remove("hidden");
   selectedFilePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -263,11 +546,11 @@ async function loadSampleFile() {
     const res = await fetch(`/api/sample/${tool}`);
     if (!res.ok) throw new Error("Gagal membuat file contoh");
     const blob = await res.blob();
-    const extMap = { pdf: "pdf", mp4: "mp4", word: "docx" };
+    const extMap = { pdf: "pdf", mp4: "mp4", crop: "mp4", word: "docx" };
     const sampleName = `Sample-${TOOL_CONFIG[tool].badge}-AlapCompressor.${extMap[tool]}`;
     const sampleFile = new File([blob], sampleName, { type: blob.type });
     handleChosenFile(sampleFile);
-    showToast(`File contoh ${sampleName} siap dikompresi!`);
+    showToast(`File contoh ${sampleName} siap diproses!`);
   } catch (err) {
     showToast(err.message || "Gagal memuat file contoh");
   } finally {
@@ -277,7 +560,7 @@ async function loadSampleFile() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Compression Execution & In-Compression Animation Updates
+// 5. Compression / Crop Execution & In-Compression Animation Updates
 // ---------------------------------------------------------------------------
 function setCircularProgress(percent) {
   const pct = Math.max(0, Math.min(100, percent));
@@ -287,7 +570,6 @@ function setCircularProgress(percent) {
   compressingPercent.textContent = `${Math.round(pct)}%`;
   linearProgressFill.style.width = `${Math.max(6, pct)}%`;
 
-  // Update 3-step pipeline tracker
   pipeStep1.classList.toggle("active", pct < 35);
   pipeStep1.classList.toggle("done", pct >= 35);
 
@@ -300,11 +582,14 @@ function setCircularProgress(percent) {
 
 async function startCompression() {
   if (!state.selectedFile) {
-    showToast("Pilih file terlebih dahulu sebelum memulai kompresi.");
+    showToast("Pilih file terlebih dahulu sebelum memulai proses.");
     return;
   }
 
-  // Switch UI to In-Compression Theater View
+  if (cropPreviewVideo && !cropPreviewVideo.paused) {
+    cropPreviewVideo.pause();
+  }
+
   viewSetup.classList.add("hidden");
   viewResult.classList.add("hidden");
   viewCompressing.classList.remove("hidden");
@@ -312,7 +597,10 @@ async function startCompression() {
   const cfg = TOOL_CONFIG[state.activeTool];
   compressingBadge.textContent = cfg.badge;
   compressingFilename.textContent = state.selectedFile.name;
-  compressingStageText.textContent = "Mengunggah & menganalisis struktur file...";
+  compressingStageText.textContent =
+    state.activeTool === "crop"
+      ? "Menganalisis koordinat crop & memotong frame video..."
+      : "Mengunggah & menganalisis struktur file...";
   state.displayedProgress = 6;
   setCircularProgress(6);
 
@@ -320,6 +608,15 @@ async function startCompression() {
   formData.append("file", state.selectedFile);
   formData.append("file_type", state.activeTool);
   formData.append("level", state.compressionLevel);
+
+  if (state.activeTool === "crop") {
+    formData.append("crop_rx", state.crop.rx.toFixed(4));
+    formData.append("crop_ry", state.crop.ry.toFixed(4));
+    formData.append("crop_rw", state.crop.rw.toFixed(4));
+    formData.append("crop_rh", state.crop.rh.toFixed(4));
+    formData.append("trim_start", trimStartInput.value || "0");
+    formData.append("trim_end", trimEndInput.value || "0");
+  }
 
   const animStartTime = performance.now();
 
@@ -330,13 +627,13 @@ async function startCompression() {
     });
     const data = await res.json();
     if (!res.ok || data.error) {
-      throw new Error(data.error || "Gagal memulai kompresi");
+      throw new Error(data.error || "Gagal memulai proses");
     }
 
     state.currentJobId = data.job_id;
     pollJobStatus(state.currentJobId, animStartTime);
   } catch (err) {
-    showToast(err.message || "Terjadi kesalahan saat mengompresi file");
+    showToast(err.message || "Terjadi kesalahan saat memproses file");
     resetToSetupView();
   }
 }
@@ -347,7 +644,7 @@ function pollJobStatus(jobId, animStartTime) {
   state.pollTimer = setInterval(async () => {
     try {
       const res = await fetch(`/api/status/${jobId}`);
-      if (!res.ok) throw new Error("Gagal memeriksa status kompresi");
+      if (!res.ok) throw new Error("Gagal memeriksa status proses");
       const job = await res.json();
 
       if (job.stage) {
@@ -356,23 +653,25 @@ function pollJobStatus(jobId, animStartTime) {
 
       if (job.status === "processing" || job.status === "queued") {
         const target = Math.max(state.displayedProgress, job.progress || 15);
-        state.displayedProgress = Math.min(95, state.displayedProgress + (target - state.displayedProgress) * 0.45 + 2);
+        state.displayedProgress = Math.min(
+          95,
+          state.displayedProgress + (target - state.displayedProgress) * 0.45 + 2
+        );
         setCircularProgress(state.displayedProgress);
       } else if (job.status === "done") {
         clearInterval(state.pollTimer);
-        // Ensure the user enjoys at least ~1.4s of smooth compression animation even for fast files
         const elapsedAnim = performance.now() - animStartTime;
         const remainingWait = Math.max(250, 1400 - elapsedAnim);
 
         setCircularProgress(100);
-        compressingStageText.textContent = "Selesai! Menyiapkan hasil kompresi...";
+        compressingStageText.textContent = "Selesai! Menyiapkan hasil akhir...";
 
         setTimeout(() => {
           showCompressionResult(job);
         }, remainingWait);
       } else if (job.status === "error") {
         clearInterval(state.pollTimer);
-        showToast(job.error || "Gagal mengompresi file.");
+        showToast(job.error || "Gagal memproses file.");
         resetToSetupView();
       }
     } catch (err) {
@@ -384,7 +683,7 @@ function pollJobStatus(jobId, animStartTime) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Result Display (3 Options + Before-After Board) & Session History
+// 6. Result Display (3 Options + Before-After Board) & Session History
 // ---------------------------------------------------------------------------
 function selectResultTier(job, tierKey) {
   const variants = job.variants || {};
@@ -421,7 +720,6 @@ function selectResultTier(job, tierKey) {
   downloadResultBtn.href = dlUrl;
   downloadResultBtn.setAttribute("download", chosen.download_name);
 
-  // Highlight selected tier card
   if (resultTiersGrid) {
     resultTiersGrid.querySelectorAll("[data-result-tier]").forEach((card) => {
       const isSelected = card.getAttribute("data-result-tier") === tierKey;
@@ -444,7 +742,9 @@ function showCompressionResult(job) {
 
   const variants = job.variants || {};
   const tierOrder = ["minim", "balanced", "light"];
-  const initialTier = job.selected_tier && variants[job.selected_tier] ? job.selected_tier : "balanced";
+  const defaultTier = job.file_type === "crop" ? "light" : "balanced";
+  const initialTier =
+    job.selected_tier && variants[job.selected_tier] ? job.selected_tier : defaultTier;
 
   if (resultTiersGrid) {
     resultTiersGrid.innerHTML = tierOrder
@@ -486,7 +786,6 @@ function showCompressionResult(job) {
   selectResultTier(job, initialTier);
 
   const chosen = variants[initialTier] || job;
-  // Add to session history
   state.history.unshift({
     jobId: job.job_id,
     name: chosen.download_name,
@@ -530,25 +829,27 @@ function resetToSetupView() {
   clearInterval(state.pollTimer);
   state.selectedFile = null;
   fileInput.value = "";
+  if (cropPreviewVideo && !cropPreviewVideo.paused) {
+    cropPreviewVideo.pause();
+  }
   selectedFilePanel.classList.add("hidden");
+  videoCropStudio.classList.add("hidden");
   viewCompressing.classList.add("hidden");
   viewResult.classList.add("hidden");
   viewSetup.classList.remove("hidden");
 }
 
 // ---------------------------------------------------------------------------
-// 6. Event Listeners Initialization
+// 7. Event Listeners Initialization
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
-  // Run initial splash screen animation
   runSplashAnimation(1500);
+  initCropBoxPointerEvents();
 
-  // Replay splash screen button
   document.getElementById("replay-splash-btn").addEventListener("click", () => {
     runSplashAnimation(1600);
   });
 
-  // Theme toggle (Warm Light <-> Warm Dark)
   document.getElementById("theme-toggle-btn").addEventListener("click", () => {
     const current = htmlEl.getAttribute("data-theme") || "light";
     const next = current === "light" ? "dark" : "light";
@@ -556,7 +857,6 @@ document.addEventListener("DOMContentLoaded", () => {
     showToast(next === "dark" ? "Mode Teduh diaktifkan" : "Mode Pastel Terang diaktifkan");
   });
 
-  // Tool selector cards & nav pills
   document.querySelectorAll("[data-select-tool]").forEach((btn) => {
     btn.addEventListener("click", () => selectTool(btn.getAttribute("data-select-tool")));
   });
@@ -565,7 +865,30 @@ document.addEventListener("DOMContentLoaded", () => {
     card.addEventListener("click", () => selectTool(card.getAttribute("data-tool-card")));
   });
 
-  // Browse & Dropzone events
+  // Crop ratio preset buttons
+  document.querySelectorAll("[data-crop-preset]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      applyCropPreset(btn.getAttribute("data-crop-preset"));
+    });
+  });
+
+  // Video preview Play/Pause toggle
+  if (cropPlayBtn) {
+    cropPlayBtn.addEventListener("click", () => {
+      if (cropPreviewVideo.paused) {
+        const tStart = parseFloat(trimStartInput.value) || 0;
+        if (cropPreviewVideo.currentTime < tStart) {
+          cropPreviewVideo.currentTime = tStart;
+        }
+        cropPreviewVideo.play();
+        cropPlayLabel.innerHTML = "&#10074;&#10074; Jeda Pratinjau";
+      } else {
+        cropPreviewVideo.pause();
+        cropPlayLabel.innerHTML = "&#9654; Putar Pratinjau";
+      }
+    });
+  }
+
   browseBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     fileInput.click();
@@ -607,18 +930,12 @@ document.addEventListener("DOMContentLoaded", () => {
     fileInput.click();
   });
 
-  // Compression preset radio cards
   document.querySelectorAll("[data-level-card]").forEach((label) => {
     label.addEventListener("click", () => {
-      const level = label.getAttribute("data-level-card");
-      state.compressionLevel = level;
-      document.querySelectorAll("[data-level-card]").forEach((el) => {
-        el.classList.toggle("selected", el.getAttribute("data-level-card") === level);
-      });
+      setCompressionLevel(label.getAttribute("data-level-card"));
     });
   });
 
-  // Start compression & reset buttons
   startCompressBtn.addEventListener("click", startCompression);
   compressAnotherBtn.addEventListener("click", resetToSetupView);
 });

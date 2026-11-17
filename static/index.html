@@ -90,7 +90,7 @@
         </div>
       </a>
 
-      <nav class="quick-nav" aria-label="Pilih jenis kompresi">
+      <nav class="quick-nav" aria-label="Pilih jenis alat">
         <button type="button" class="nav-pill active" data-select-tool="pdf">
           <span class="dot dot-pdf"></span>
           Kompres PDF
@@ -102,6 +102,10 @@
         <button type="button" class="nav-pill" data-select-tool="word">
           <span class="dot dot-word"></span>
           Kompres Word
+        </button>
+        <button type="button" class="nav-pill" data-select-tool="crop">
+          <span class="dot dot-crop"></span>
+          Crop Video
         </button>
       </nav>
 
@@ -199,6 +203,23 @@
           <p>Rampingkan ukuran dokumen Microsoft Word dengan kompresi media &amp; arsip XML.</p>
         </div>
       </button>
+
+      <!-- Crop Video Card -->
+      <button type="button" class="tool-card" data-tool-card="crop">
+        <div class="tool-card-icon icon-crop">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2v14a2 2 0 0 0 2 2h14"></path>
+            <path d="M18 22V8a2 2 0 0 0-2-2H2"></path>
+          </svg>
+        </div>
+        <div class="tool-card-body">
+          <div class="tool-card-top">
+            <h3>Crop Video</h3>
+            <span class="format-tag tag-crop">CROP MP4</span>
+          </div>
+          <p>Potong area bingkai layar atau durasi video untuk memangkas ukuran tanpa harus kompresi berlebih.</p>
+        </div>
+      </button>
     </section>
 
     <!-- ==================================================================
@@ -251,18 +272,77 @@
             <div class="file-badge-icon" id="selected-file-badge">PDF</div>
             <div class="file-meta">
               <h4 id="selected-file-name">dokumen-contoh.pdf</h4>
-              <p>Ukuran asli: <strong id="selected-file-size">2.45 MB</strong> &bull; Siap dikompresi</p>
+              <p>Ukuran asli: <strong id="selected-file-size">2.45 MB</strong> &bull; <span id="selected-file-status-note">Siap diproses</span></p>
             </div>
             <button type="button" class="btn-change-file" id="change-file-btn" title="Ganti file">
               Ganti File
             </button>
           </div>
 
+          <!-- Interactive Video Crop Studio (Shown when activeTool === 'crop') -->
+          <div class="video-crop-studio hidden" id="video-crop-studio">
+            <div class="crop-studio-header">
+              <div class="crop-studio-title-group">
+                <span class="crop-studio-title">Studio Pemotong Area &amp; Durasi Video</span>
+                <small>Geser kotak atau tarik sudut pada pratinjau video untuk memilih area yang ingin dipertahankan</small>
+              </div>
+              <div class="crop-dim-pill" id="crop-dim-pill">1280 &times; 720 px &rarr; 960 &times; 540 px (-44% piksel)</div>
+            </div>
+
+            <!-- Aspect Ratio Presets -->
+            <div class="crop-ratio-bar" role="group" aria-label="Pilihan Rasio Crop">
+              <button type="button" class="ratio-pill active" data-crop-preset="center75">Tengah 75%</button>
+              <button type="button" class="ratio-pill" data-crop-preset="1:1">1:1 (Persegi)</button>
+              <button type="button" class="ratio-pill" data-crop-preset="9:16">9:16 (Vertikal)</button>
+              <button type="button" class="ratio-pill" data-crop-preset="16:9">16:9 (Lanskap)</button>
+              <button type="button" class="ratio-pill" data-crop-preset="4:3">4:3 (Klasik)</button>
+              <button type="button" class="ratio-pill" data-crop-preset="free"> Penuh (100%)</button>
+            </div>
+
+            <!-- Interactive Video Stage -->
+            <div class="crop-stage-outer">
+              <div class="crop-video-wrap" id="crop-video-wrap">
+                <video id="crop-preview-video" playsinline muted loop></video>
+                <div class="crop-box-overlay" id="crop-box-overlay">
+                  <div class="crop-grid-line grid-h1"></div>
+                  <div class="crop-grid-line grid-h2"></div>
+                  <div class="crop-grid-line grid-v1"></div>
+                  <div class="crop-grid-line grid-v2"></div>
+                  <span class="crop-handle handle-nw" data-handle="nw"></span>
+                  <span class="crop-handle handle-ne" data-handle="ne"></span>
+                  <span class="crop-handle handle-sw" data-handle="sw"></span>
+                  <span class="crop-handle handle-se" data-handle="se"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Playback & Optional Duration Trim Controls (Below video, never overlapping) -->
+            <div class="crop-controls-footer">
+              <div class="crop-playback-group">
+                <button type="button" class="btn-play-toggle" id="crop-play-btn">
+                  <span id="crop-play-label">&#9654; Putar Pratinjau</span>
+                </button>
+                <span class="crop-time-readout" id="crop-time-readout">0.0s / 0.0s</span>
+              </div>
+
+              <div class="crop-trim-group">
+                <label class="trim-field">
+                  <span>Mulai (detik)</span>
+                  <input type="number" id="trim-start-input" min="0" step="0.1" value="0" />
+                </label>
+                <label class="trim-field">
+                  <span>Selesai (detik, 0 = penuh)</span>
+                  <input type="number" id="trim-end-input" min="0" step="0.1" value="0" />
+                </label>
+              </div>
+            </div>
+          </div>
+
           <!-- Compression Level Selector (3 Options) -->
-          <div class="level-selector-block">
+          <div class="level-selector-block" id="level-selector-block">
             <div class="level-header">
-              <span>Pilih Opsi Prioritas Kompresi</span>
-              <small>Ketiga opsi tetap akan disiapkan agar bisa kamu bandingkan di hasil akhir</small>
+              <span id="level-header-title">Pilih Opsi Prioritas Kompresi</span>
+              <small id="level-header-sub">Ketiga opsi tetap akan disiapkan agar bisa kamu bandingkan di hasil akhir</small>
             </div>
 
             <div class="level-grid" role="radiogroup" aria-label="Tingkat Kompresi">
@@ -270,10 +350,10 @@
                 <input type="radio" name="compression_level" value="minim" />
                 <div class="level-option-inner">
                   <div class="level-top">
-                    <span class="level-title">Ukuran Paling Minim</span>
-                    <span class="level-chip chip-saver">Paling Kecil</span>
+                    <span class="level-title" id="lvl-title-minim">Ukuran Paling Minim</span>
+                    <span class="level-chip chip-saver" id="lvl-chip-minim">Paling Kecil</span>
                   </div>
-                  <p>Kompresi maksimal ke ukuran terkecil yang memungkinkan tanpa merusak isi &amp; keterbacaan file.</p>
+                  <p id="lvl-desc-minim">Kompresi maksimal ke ukuran terkecil yang memungkinkan tanpa merusak isi &amp; keterbacaan file.</p>
                 </div>
               </label>
 
@@ -281,10 +361,10 @@
                 <input type="radio" name="compression_level" value="balanced" checked />
                 <div class="level-option-inner">
                   <div class="level-top">
-                    <span class="level-title">Balanced (Seimbang)</span>
-                    <span class="level-chip chip-best">Rekomendasi</span>
+                    <span class="level-title" id="lvl-title-balanced">Balanced (Seimbang)</span>
+                    <span class="level-chip chip-best" id="lvl-chip-balanced">Rekomendasi</span>
                   </div>
-                  <p>Keseimbangan ideal: ukuran file jauh lebih hemat dengan ketajaman visual yang tetap terjaga.</p>
+                  <p id="lvl-desc-balanced">Keseimbangan ideal: ukuran file jauh lebih hemat dengan ketajaman visual yang tetap terjaga.</p>
                 </div>
               </label>
 
@@ -292,10 +372,10 @@
                 <input type="radio" name="compression_level" value="light" />
                 <div class="level-option-inner">
                   <div class="level-top">
-                    <span class="level-title">Kompres Sedikit</span>
-                    <span class="level-chip chip-hq">Mendekati Utama</span>
+                    <span class="level-title" id="lvl-title-light">Kompres Sedikit</span>
+                    <span class="level-chip chip-hq" id="lvl-chip-light">Mendekati Utama</span>
                   </div>
-                  <p>Hanya memangkas sedikit beban berlebih agar ukuran mendekati file utama dengan kualitas penuh.</p>
+                  <p id="lvl-desc-light">Hanya memangkas sedikit beban berlebih agar ukuran mendekati file utama dengan kualitas penuh.</p>
                 </div>
               </label>
             </div>
@@ -303,7 +383,7 @@
 
           <div class="compress-cta-row">
             <button type="button" class="btn-compress-now" id="start-compress-btn">
-              <span>Kompres Sekarang</span>
+              <span id="start-compress-btn-label">Kompres Sekarang</span>
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12"></line>
                 <polyline points="12 5 19 12 12 19"></polyline>
