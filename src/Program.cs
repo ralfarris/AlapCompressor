@@ -784,12 +784,84 @@ namespace AlapCompressor
 
         private static void CompressPdfTier(string inputPath, string outputPath, string tier)
         {
-            long jpegQuality = tier == "minim" ? 26L : (tier == "balanced" ? 54L : 76L);
-            int maxDim = tier == "minim" ? 700 : (tier == "balanced" ? 1200 : 1650);
+            int maxDim = tier == "minim" ? 720 : (tier == "balanced" ? 1220 : 1520);
+            int quality = tier == "minim" ? 28 : (tier == "balanced" ? 54 : 70);
+            int deflate = tier == "light" ? 6 : 9;
 
+            // Try high-precision PyPDF + Pillow engine first if Python is available on host
+            if (TryRunPythonPdfCompress(inputPath, outputPath, maxDim, quality, deflate, tier == "minim"))
+            {
+                if (File.Exists(outputPath) && new FileInfo(outputPath).Length > 0)
+                {
+                    if (new FileInfo(outputPath).Length > new FileInfo(inputPath).Length)
+                    {
+                        File.Copy(inputPath, outputPath, true);
+                    }
+                    return;
+                }
+            }
+
+            // Standalone pure C# fallback: extract embedded JPEG images, recompress at target tier quality & rebuild valid PDF with xref
             byte[] pdfBytes = File.ReadAllBytes(inputPath);
-            byte[] optimized = RecompressJpegsInsideBinary(pdfBytes, maxDim, jpegQuality);
-            File.WriteAllBytes(outputPath, optimized);
+            List<byte[]> recompressedPages = ExtractAndReencodeJpegs(pdfBytes, maxDim, quality);
+            if (recompressedPages.Count > 0)
+            {
+                byte[] rebuilt = BuildValidPdfFromJpegs(recompressedPages);
+                if (rebuilt.Length < pdfBytes.Length)
+                {
+                    File.WriteAllBytes(outputPath, rebuilt);
+                    return;
+                }
+            }
+            File.Copy(inputPath, outputPath, true);
+        }
+
+        private static bool TryRunPythonPdfCompress(string inputPath, string outputPath, int maxDim, int quality, int deflate, bool stripMeta)
+        {
+            try
+            {
+                string script =
+                    "import sys, shutil, pypdf; from PIL import Image\n" +
+                    "inp, outp, max_d, qual, defl = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])\n" +
+                    "w = pypdf.PdfWriter(clone_from=inp)\n" +
+                    "for p in w.pages:\n" +
+                    "    try:\n" +
+                    "        for im in p.images:\n" +
+                    "            pil = im.image\n" +
+                    "            if pil:\n" +
+                    "                iw, ih = pil.size\n" +
+                    "                if max(iw, ih) > max_d:\n" +
+                    "                    s = max_d / float(max(iw, ih))\n" +
+                    "                    pil = pil.resize((max(1, int(iw*s)), max(1, int(ih*s))), Image.Resampling.LANCZOS)\n" +
+                    "                if pil.mode not in ('RGB', 'L'): pil = pil.convert('RGB')\n" +
+                    "                im.replace(pil, quality=qual)\n" +
+                    "    except Exception: pass\n" +
+                    "    try: p.compress_content_streams(level=defl)\n" +
+                    "    except Exception: pass\n" +
+                    "try: w.compress_identical_objects(remove_duplicates=True, remove_unreferenced=True)\n" +
+                    "except Exception: pass\n" +
+                    "with open(outp, 'wb') as f: w.write(f)\n";
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = string.Format("-c \"{0}\" \"{1}\" \"{2}\" {3} {4} {5}",
+                        script.Replace("\"", "\\\"").Replace("\n", "; "),
+                        inputPath, outputPath, maxDim, quality, deflate),
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true
+                };
+                using (var p = Process.Start(psi))
+                {
+                    p.WaitForExit(30000);
+                    return p.ExitCode == 0 && File.Exists(outputPath);
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void CompressMp4Tier(string inputPath, string outputPath, string tier)
@@ -832,38 +904,96 @@ namespace AlapCompressor
             return "ffmpeg";
         }
 
-        private static byte[] RecompressJpegsInsideBinary(byte[] data, int maxDim, long quality)
+        private static List<byte[]> ExtractAndReencodeJpegs(byte[] data, int maxDim, long quality)
         {
-            // Scan for embedded JPEG streams (FFD8FF ... FFD9) inside PDF/containers and recompress them
-            using (var outMs = new MemoryStream(data.Length))
+            var pages = new List<byte[]>();
+            int i = 0;
+            while (i < data.Length)
             {
-                int i = 0;
-                while (i < data.Length)
+                int jpgStart = FindJpegStart(data, i);
+                if (jpgStart < 0) break;
+                int jpgEnd = FindJpegEnd(data, jpgStart + 3);
+                if (jpgEnd < 0 || jpgEnd - jpgStart < 2048)
                 {
-                    int jpgStart = FindJpegStart(data, i);
-                    if (jpgStart < 0)
-                    {
-                        outMs.Write(data, i, data.Length - i);
-                        break;
-                    }
-                    int jpgEnd = FindJpegEnd(data, jpgStart + 3);
-                    if (jpgEnd < 0 || jpgEnd - jpgStart < 2048)
-                    {
-                        outMs.Write(data, i, (jpgStart - i) + 1);
-                        i = jpgStart + 1;
-                        continue;
-                    }
-
-                    outMs.Write(data, i, jpgStart - i);
-                    int jpgLen = (jpgEnd + 2) - jpgStart;
-                    byte[] origJpg = new byte[jpgLen];
-                    Buffer.BlockCopy(data, jpgStart, origJpg, 0, jpgLen);
-
-                    byte[] smaller = TryReencodeJpeg(origJpg, maxDim, quality);
-                    outMs.Write(smaller, 0, smaller.Length);
-                    i = jpgEnd + 2;
+                    i = jpgStart + 1;
+                    continue;
                 }
-                return outMs.ToArray();
+                int jpgLen = (jpgEnd + 2) - jpgStart;
+                byte[] origJpg = new byte[jpgLen];
+                Buffer.BlockCopy(data, jpgStart, origJpg, 0, jpgLen);
+                pages.Add(TryReencodeJpeg(origJpg, maxDim, quality));
+                i = jpgEnd + 2;
+            }
+            return pages;
+        }
+
+        private static byte[] BuildValidPdfFromJpegs(List<byte[]> jpegs)
+        {
+            using (var ms = new MemoryStream())
+            {
+                var offsets = new List<long>();
+                Action<string> w = str =>
+                {
+                    byte[] b = Encoding.ASCII.GetBytes(str);
+                    ms.Write(b, 0, b.Length);
+                };
+
+                w("%PDF-1.4\n");
+
+                // 1: Catalog, 2: Pages
+                offsets.Add(ms.Position);
+                w("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+                int pageCount = jpegs.Count;
+                var kids = new List<string>();
+                for (int p = 0; p < pageCount; p++)
+                {
+                    kids.Add((3 + p * 3) + " 0 R");
+                }
+                offsets.Add(ms.Position);
+                w("2 0 obj\n<< /Type /Pages /Kids [" + string.Join(" ", kids.ToArray()) + "] /Count " + pageCount + " >>\nendobj\n");
+
+                for (int p = 0; p < pageCount; p++)
+                {
+                    byte[] jpg = jpegs[p];
+                    int imgW = 1200, imgH = 1500;
+                    try
+                    {
+                        using (var ims = new MemoryStream(jpg))
+                        using (var bmp = new Bitmap(ims))
+                        {
+                            imgW = bmp.Width;
+                            imgH = bmp.Height;
+                        }
+                    }
+                    catch { }
+
+                    int pageObjId = 3 + p * 3;
+                    int imgObjId = pageObjId + 1;
+                    int contentObjId = pageObjId + 2;
+
+                    offsets.Add(ms.Position);
+                    w(pageObjId + " 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im0 " + imgObjId + " 0 R >> >> /MediaBox [0 0 595 842] /Contents " + contentObjId + " 0 R >>\nendobj\n");
+
+                    offsets.Add(ms.Position);
+                    w(imgObjId + " 0 obj\n<< /Type /XObject /Subtype /Image /Width " + imgW + " /Height " + imgH + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + jpg.Length + " >>\nstream\n");
+                    ms.Write(jpg, 0, jpg.Length);
+                    w("\nendstream\nendobj\n");
+
+                    string content = "q 595 0 0 842 0 0 cm /Im0 Do Q";
+                    offsets.Add(ms.Position);
+                    w(contentObjId + " 0 obj\n<< /Length " + content.Length + " >>\nstream\n" + content + "\nendstream\nendobj\n");
+                }
+
+                long xrefPos = ms.Position;
+                int totalObjs = offsets.Count + 1;
+                w("xref\n0 " + totalObjs + "\n0000000000 65535 f \n");
+                foreach (long off in offsets)
+                {
+                    w(off.ToString("D10") + " 00000 n \n");
+                }
+                w("trailer\n<< /Size " + totalObjs + " /Root 1 0 R >>\nstartxref\n" + xrefPos + "\n%%EOF\n");
+                return ms.ToArray();
             }
         }
 
@@ -945,22 +1075,12 @@ namespace AlapCompressor
 
         public static byte[] GenerateSamplePdf()
         {
-            byte[] jpg = CreateRichJpeg(1200, 1500, Color.FromArgb(42, 157, 143), Color.FromArgb(224, 109, 83), 96L);
-            using (var ms = new MemoryStream())
+            var pages = new List<byte[]>
             {
-                Action<string> w = str => { byte[] b = Encoding.ASCII.GetBytes(str); ms.Write(b, 0, b.Length); };
-                w("%PDF-1.4\n");
-                w("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n");
-                w("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n");
-                w("3 0 obj << /Type /Page /Parent 2 0 R /Resources << /XObject << /Im0 4 0 R >> >> /MediaBox [0 0 600 750] /Contents 5 0 R >> endobj\n");
-                w("4 0 obj << /Type /XObject /Subtype /Image /Width 1200 /Height 1500 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + jpg.Length + " >>\nstream\n");
-                ms.Write(jpg, 0, jpg.Length);
-                w("\nendstream\nendobj\n");
-                string content = "q 600 0 0 750 0 0 cm /Im0 Do Q";
-                w("5 0 obj << /Length " + content.Length + " >>\nstream\n" + content + "\nendstream\nendobj\n");
-                w("trailer << /Root 1 0 R >>\n%%EOF\n");
-                return ms.ToArray();
-            }
+                CreateRichJpeg(1200, 1500, Color.FromArgb(42, 157, 143), Color.FromArgb(224, 109, 83), 95L),
+                CreateRichJpeg(1200, 1500, Color.FromArgb(74, 111, 165), Color.FromArgb(244, 162, 97), 95L)
+            };
+            return BuildValidPdfFromJpegs(pages);
         }
 
         public static byte[] GenerateSampleMp4(string tempRoot)

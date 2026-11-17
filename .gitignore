@@ -9,6 +9,7 @@ env/
 # Temporary compression workspaces
 temp_jobs/
 *.tmp
+dist/*.zip
 
 # OS / Editor
 .DS_Store
